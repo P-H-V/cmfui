@@ -172,13 +172,14 @@ function addMultilineWidget(node, name, opts, app) {
 				position: "absolute",
 				background: (!node.color)?'':node.color,
 				color: (!node.color)?'':'white',
-				zIndex: app.graph._nodes.indexOf(node),
+				zIndex: node.graph._nodes.indexOf(node),
 			});
 			this.inputEl.hidden = !visible;
 		},
 	};
 	widget.inputEl = document.createElement("textarea");
 	widget.inputEl.className = "comfy-multiline-input";
+	widget.inputEl.style.display = "none";
 	widget.inputEl.value = opts.defaultVal;
 	widget.inputEl.placeholder = opts.placeholder || "";
 	document.addEventListener("mousedown", function (event) {
@@ -195,8 +196,11 @@ function addMultilineWidget(node, name, opts, app) {
 		// Draw node isnt fired once the node is off the screen
 		// if it goes off screen quickly, the input may not be removed
 		// this shifts it off screen so it can be moved back if the node is visible.
-		for (let n in app.graph._nodes) {
-			n = graph._nodes[n];
+		const graphcanvas = LGraphCanvas.active_canvas
+		if (graphcanvas == null || graphcanvas.graph != node.graph)
+			return
+
+		for (const n of graphcanvas.graph.iterateNodes()) {
 			for (let w in n.widgets) {
 				let wid = n.widgets[w];
 				if (Object.hasOwn(wid, "inputEl")) {
@@ -215,6 +219,20 @@ function addMultilineWidget(node, name, opts, app) {
 			}
 		}
 	};
+
+	const onGraphAttached = node.onGraphAttached;
+	node.onGraphAttached = function() {
+		widget.inputEl.style.display = "block";
+		if (onGraphAttached)
+			onGraphAttached.apply(this, arguments)
+	}
+
+	const onGraphDetached = node.onGraphDetached;
+	node.onGraphDetached = function() {
+		widget.inputEl.style.display = "none";
+		if (onGraphDetached)
+			onGraphDetached.apply(this, arguments)
+	}
 
 	widget.onRemove = () => {
 		widget.inputEl?.remove();
@@ -295,7 +313,7 @@ export const ComfyWidgets = {
 			const img = new Image();
 			img.onload = () => {
 				node.imgs = [img];
-				app.graph.setDirtyCanvas(true);
+				node.graph.setDirtyCanvas(true);
 			};
 			let folder_separator = name.lastIndexOf("/");
 			let subfolder = "";
