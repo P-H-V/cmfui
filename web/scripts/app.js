@@ -1119,9 +1119,11 @@ export class ComfyApp {
 					for (const inputName in inputs) {
 						const inputData = inputs[inputName];
 						const type = inputData[0];
+						const options = inputData[1] || {};
+						const inputShape = options.is_list ? LiteGraph.GRID_SHAPE : LiteGraph.CIRCLE_SHAPE;
 
 						if(inputData[1]?.forceInput) {
-							this.addInput(inputName, type);
+							this.addInput(inputName, type, { shape: inputShape });
 						} else {
 							if (Array.isArray(type)) {
 								// Enums
@@ -1134,7 +1136,7 @@ export class ComfyApp {
 								Object.assign(config, widgets[type](this, inputName, inputData, app) || {});
 							} else {
 								// Node connection inputs
-								this.addInput(inputName, type);
+								this.addInput(inputName, type, { shape: inputShape });
 							}
 						}
 					}
@@ -1142,7 +1144,7 @@ export class ComfyApp {
 					for (const o in nodeData["output"]) {
 						const output = nodeData["output"][o];
 						const outputName = nodeData["output_name"][o] || output;
-						const outputShape = nodeData["output_is_list"][o] ? LiteGraph.GRID_SHAPE : LiteGraph.CIRCLE_SHAPE ;
+						const outputShape = nodeData["output_is_list"][o] ? LiteGraph.GRID_SHAPE : LiteGraph.CIRCLE_SHAPE;
 						this.addOutput(outputName, output, { shape: outputShape });
 					}
 
@@ -1321,7 +1323,8 @@ export class ComfyApp {
 				for (const i in widgets) {
 					const widget = widgets[i];
 					if (!widget.options || widget.options.serialize !== false) {
-						inputs[widget.name] = widget.serializeValue ? await widget.serializeValue(n, i) : widget.value;
+						const value = widget.serializeValue ? await widget.serializeValue(n, i) : widget.value;
+						inputs[widget.name] = { type: "value", value }
 					}
 				}
 			}
@@ -1341,7 +1344,11 @@ export class ComfyApp {
 					}
 
 					if (link) {
-						inputs[node.inputs[i].name] = [String(link.origin_id), parseInt(link.origin_slot)];
+						inputs[node.inputs[i].name] = {
+							type: "link",
+							origin_id: String(link.origin_id),
+							origin_slot: parseInt(link.origin_slot)
+						};
 					}
 				}
 			}
@@ -1385,6 +1392,9 @@ export class ComfyApp {
 			message += "\n" + nodeError.class_type + ":"
 				for (const errorReason of nodeError.errors) {
 					message += "\n    - " + errorReason.message + ": " + errorReason.details
+					if (errorReason.extra_info?.traceback) {
+						message += "\n" + errorReason.extra_info.traceback.join("")
+					}
 				}
 			}
 			return message
