@@ -1,5 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { ComfyWidgets } from "../../scripts/widgets.js";
+import { LiteGraph } from "../../lib/litegraph.core.js"
+
 // Adds defaults for quickly adding nodes with middle click on the input/output
 
 app.registerExtension({
@@ -26,7 +28,7 @@ app.registerExtension({
 	slot_types_default_out: {},
 	slot_types_default_in: {},
 	async beforeRegisterNodeDef(nodeType, nodeData, app) {
-				var nodeId = nodeData.name;
+		var nodeId = nodeData.name;
 		var inputs = [];
 		inputs = nodeData["input"]["required"]; //only show required inputs to reduce the mess also not logical to create node with optional inputs
 		for (const inputKey in inputs) {
@@ -77,7 +79,6 @@ app.registerExtension({
 		this.setDefaults(maxNum);
 	},
 	setDefaults(maxNum) {
-
 		LiteGraph.slot_types_default_out = {};
 		LiteGraph.slot_types_default_in = {};
 

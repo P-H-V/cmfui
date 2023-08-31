@@ -1,5 +1,8 @@
 import { ComfyWidgets, addValueControlWidget } from "../../scripts/widgets.js";
 import { app } from "../../scripts/app.js";
+import { hook } from "../../scripts/utils.js";
+import { ComfyGraphNode } from "../../scripts/graphNode.js";
+import { LiteGraph } from "../../lib/litegraph.core.js"
 
 const CONVERTED_TYPE = "converted-widget";
 const VALID_TYPES = ["STRING", "combo", "number", "BOOLEAN"];
@@ -95,9 +98,9 @@ app.registerExtension({
 	name: "Comfy.WidgetInputs",
 	async beforeRegisterNodeDef(nodeType, nodeData, app) {
 		// Add menu options to conver to/from widgets
-		const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
-		nodeType.prototype.getExtraMenuOptions = function (_, options) {
-			const r = origGetExtraMenuOptions ? origGetExtraMenuOptions.apply(this, arguments) : undefined;
+		hook(nodeType.class, "getExtraMenuOptions", function(origGetExtraMenuOptions, args) {
+			const r = origGetExtraMenuOptions ? origGetExtraMenuOptions.apply(this, args) : undefined;
+			const options = args[1];
 
 			if (this.widgets) {
 				let toInput = [];
@@ -128,12 +131,11 @@ app.registerExtension({
 			}
 
 			return r;
-		};
+		})
 
 		// On initial configure of nodes hide all converted widgets
-		const origOnConfigure = nodeType.prototype.onConfigure;
-		nodeType.prototype.onConfigure = function () {
-			const r = origOnConfigure ? origOnConfigure.apply(this, arguments) : undefined;
+		hook(nodeType.class, "onConfigure", function(origOnConfigure, args) {
+			const r = origOnConfigure ? origOnConfigure.apply(this, args) : undefined;
 
 			if (this.inputs) {
 				for (const input of this.inputs) {
@@ -149,7 +151,7 @@ app.registerExtension({
 			}
 
 			return r;
-		};
+		});
 
 		function isNodeAtPos(pos) {
 			for (const n of app.graph._nodes) {
@@ -161,10 +163,10 @@ app.registerExtension({
 		}
 
 		// Double click a widget input to automatically attach a primitive
-		const origOnInputDblClick = nodeType.prototype.onInputDblClick;
 		const ignoreDblClick = Symbol();
-		nodeType.prototype.onInputDblClick = function (slot) {
-			const r = origOnInputDblClick ? origOnInputDblClick.apply(this, arguments) : undefined;
+		hook(nodeType.class, "onInputDblClick", function (origOnInputDblClick, args) {
+			const r = origOnInputDblClick ? origOnInputDblClick.apply(this, args) : undefined;
+			const slot = args[0];
 
 			const input = this.inputs[slot];
 			if (!input.widget || !input[ignoreDblClick]) {
@@ -195,11 +197,12 @@ app.registerExtension({
 			}, 300);
 
 			return r;
-		};
+		});
 	},
 	registerCustomNodes() {
-		class PrimitiveNode {
-			constructor() {
+		class PrimitiveNode extends ComfyGraphNode {
+			constructor(title) {
+				super(title);
 				this.addOutput("connect to widget input", "*");
 				this.serialize_widgets = true;
 				this.isVirtualNode = true;
@@ -213,7 +216,7 @@ app.registerExtension({
 					for (const l of node.outputs[0].links) {
 						const linkInfo = app.graph.links[l];
 						const n = node.graph.getNodeById(linkInfo.target_id);
-						if (n.type == "Reroute") {
+						if (n.type === "Reroute") {
 							links = links.concat(get_links(n));
 						} else {
 							links.push(l);
@@ -403,12 +406,11 @@ app.registerExtension({
 			}
 		}
 
-		LiteGraph.registerNodeType(
-			"PrimitiveNode",
-			Object.assign(PrimitiveNode, {
-				title: "Primitive",
-			})
-		);
-		PrimitiveNode.category = "utils";
+		LiteGraph.registerNodeType({
+			class: PrimitiveNode,
+			type: "PrimitiveNode",
+			title: "Primitive",
+			category: "utils"
+		});
 	},
 });

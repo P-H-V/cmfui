@@ -1,23 +1,24 @@
-import {app} from "../../scripts/app.js";
+import { app } from "../../scripts/app.js";
+import { LiteGraph, LGraphCanvas } from "../../lib/litegraph.core.js"
+import { hook } from "../../scripts/utils.js";
 
 // Adds filtering to combo context menus
 
 const ext = {
 	name: "Comfy.ContextMenuFilter",
 	init() {
-		const ctxMenu = LiteGraph.ContextMenu;
-
-		LiteGraph.ContextMenu = function (values, options) {
-			const ctx = ctxMenu.call(this, values, options);
+		hook(LiteGraph, "onContextMenuCreated", (orig, args) => {
+			orig?.(...args);
+			const contextMenu = args[0];
 
 			// If we are a dark menu (only used for combo boxes) then add a filter input
-			if (options?.className === "dark" && values?.length > 10) {
+			if (contextMenu.options?.className === "dark" && contextMenu.values?.length > 10) {
 				const filter = document.createElement("input");
 				filter.classList.add("comfy-context-menu-filter");
 				filter.placeholder = "Filter list";
-				this.root.prepend(filter);
+				contextMenu.root.prepend(filter);
 
-				const items = Array.from(this.root.querySelectorAll(".litemenu-entry"));
+				const items = Array.from(contextMenu.root.querySelectorAll(".litemenu-entry"));
 				let displayedItems = [...items];
 				let itemCount = displayedItems.length;
 
@@ -25,14 +26,14 @@ const ext = {
 				requestAnimationFrame(() => {
 					const currentNode = LGraphCanvas.active_canvas.current_node;
 					const clickedComboValue = currentNode.widgets
-						.filter(w => w.type === "combo" && w.options.values.length === values.length)
-						.find(w => w.options.values.every((v, i) => v === values[i]))
+						.filter(w => w.type === "combo" && w.options.values.length === contextMenu.values.length)
+						.find(w => w.options.values.every((v, i) => v === contextMenu.values[i]))
 						?.value;
 
-					let selectedIndex = clickedComboValue ? values.findIndex(v => v === clickedComboValue) : 0;
+					let selectedIndex = clickedComboValue ? contextMenu.values.findIndex(v => v === clickedComboValue) : 0;
 					if (selectedIndex < 0) {
 						selectedIndex = 0;
-					} 
+					}
 					let selectedItem = displayedItems[selectedIndex];
 					updateSelected();
 
@@ -46,13 +47,13 @@ const ext = {
 					}
 
 					const positionList = () => {
-						const rect = this.root.getBoundingClientRect();
+						const rect = contextMenu.root.getBoundingClientRect();
 
 						// If the top is off-screen then shift the element with scaling applied
 						if (rect.top < 0) {
-							const scale = 1 - this.root.getBoundingClientRect().height / this.root.clientHeight;
-							const shift = (this.root.clientHeight * scale) / 2;
-							this.root.style.top = -shift + "px";
+							const scale = 1 - contextMenu.root.getBoundingClientRect().height / contextMenu.root.clientHeight;
+							const shift = (contextMenu.root.clientHeight * scale) / 2;
+							contextMenu.root.style.top = -shift + "px";
 						}
 					}
 
@@ -91,7 +92,7 @@ const ext = {
 								selectedItem?.click();
 								break;
 							case "Escape":
-								this.close();
+								contextMenu.close();
 								break;
 						}
 					});
@@ -115,16 +116,16 @@ const ext = {
 						updateSelected();
 
 						// If we have an event then we can try and position the list under the source
-						if (options.event) {
-							let top = options.event.clientY - 10;
+						if (contextMenu.options.event) {
+							let top = contextMenu.options.event.clientY - 10;
 
 							const bodyRect = document.body.getBoundingClientRect();
-							const rootRect = this.root.getBoundingClientRect();
+							const rootRect = contextMenu.root.getBoundingClientRect();
 							if (bodyRect.height && top > bodyRect.height - rootRect.height - 10) {
 								top = Math.max(0, bodyRect.height - rootRect.height - 10);
 							}
 
-							this.root.style.top = top + "px";
+							contextMenu.root.style.top = top + "px";
 							positionList();
 						}
 					});
@@ -137,11 +138,7 @@ const ext = {
 					});
 				})
 			}
-
-			return ctx;
-		};
-
-		LiteGraph.ContextMenu.prototype = ctxMenu.prototype;
+		});
 	},
 }
 
