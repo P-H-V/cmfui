@@ -56,7 +56,8 @@ COPY --chown=${USER_UID}:${USER_GID} . .
 # default environment variables
 ENV COMFYUI_ADDRESS=0.0.0.0
 ENV COMFYUI_PORT=8188
+ENV COMFYUI_EXTRA_BUILD_ARGS="${EXTRA_ARGS}"
 ENV COMFYUI_EXTRA_ARGS=""
 # default start command
 CMD if [ -d "${VIRTUAL_ENV_CUSTOM}" ]; then rsync -aP "${VIRTUAL_ENV}/" "${VIRTUAL_ENV_CUSTOM}/"; fi;\
-  python -u main.py --listen ${COMFYUI_ADDRESS} --port ${COMFYUI_PORT} ${EXTRA_ARGS} ${COMFYUI_EXTRA_ARGS}
+  python -u main.py --listen ${COMFYUI_ADDRESS} --port ${COMFYUI_PORT} ${COMFYUI_EXTRA_BUILD_ARGS} ${COMFYUI_EXTRA_ARGS}
