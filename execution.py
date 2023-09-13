@@ -51,14 +51,14 @@ def map_node_over_list(obj, input_data_all, func, allow_interrupt=False):
         max_len_input = 0
     else:
         max_len_input = max([len(x) for x in input_data_all.values()])
-
+     
     # get a slice of inputs, repeat last input when list isn't long enough
     def slice_dict(d, i):
         d_new = dict()
         for k,v in d.items():
             d_new[k] = v[i if len(v) > i else -1]
         return d_new
-
+    
     results = []
     if input_is_list:
         if allow_interrupt:
@@ -76,7 +76,7 @@ def map_node_over_list(obj, input_data_all, func, allow_interrupt=False):
     return results
 
 def get_output_data(obj, input_data_all):
-
+    
     results = []
     uis = []
     return_values = map_node_over_list(obj, input_data_all, obj.FUNCTION, allow_interrupt=True)
@@ -89,7 +89,7 @@ def get_output_data(obj, input_data_all):
                 results.append(r['result'])
         else:
             results.append(r)
-
+    
     output = []
     if len(results) > 0:
         # check which outputs need concatenating
@@ -104,7 +104,7 @@ def get_output_data(obj, input_data_all):
             else:
                 output.append([o[i] for o in results])
 
-    ui = dict()
+    ui = dict()    
     if len(uis) > 0:
         ui = {k: [y for x in uis for y in x[k]] for k in uis[0].keys()}
     return output, ui
