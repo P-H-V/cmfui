@@ -194,7 +194,7 @@ def recursive_execute(server, prompt, outputs, current_item, extra_data, execute
 
     return (True, None, None)
 
-def recursive_will_execute(prompt, outputs, current_item):
+def recursive_will_execute(prompt, outputs, current_item, node_output_cache):
     unique_id = current_item
     inputs = prompt[unique_id]['inputs']
     will_execute = []
@@ -206,8 +206,13 @@ def recursive_will_execute(prompt, outputs, current_item):
         if isinstance(input_data, list):
             input_unique_id = input_data[0]
             output_index = input_data[1]
-            if input_unique_id not in outputs:
-                will_execute += recursive_will_execute(prompt, outputs, input_unique_id)
+            node_output_cache_key = f'{input_unique_id}.{output_index}'
+            # If this node's output has already been recursively evaluated, then we can reuse.
+            if node_output_cache_key in node_output_cache:
+                will_execute = node_output_cache[node_output_cache_key]
+            elif input_unique_id not in outputs:
+                will_execute += recursive_will_execute(prompt, outputs, input_unique_id, node_output_cache)
+                node_output_cache[node_output_cache_key] = will_execute
 
     return will_execute + [unique_id]
 
@@ -371,9 +376,11 @@ class PromptExecutor:
             for node_id in list(execute_outputs):
                 to_execute += [(0, node_id)]
 
+            # Optimize recursive_will_execute by providing a local cache (at the prompt level).
+            will_execute_cache={}
             while len(to_execute) > 0:
                 #always execute the output that depends on the least amount of unexecuted nodes first
-                to_execute = sorted(list(map(lambda a: (len(recursive_will_execute(prompt, self.outputs, a[-1])), a[-1]), to_execute)))
+                to_execute = sorted(list(map(lambda a: (len(recursive_will_execute(prompt, self.outputs, a[-1], will_execute_cache)), a[-1]), to_execute)))
                 output_node_id = to_execute.pop(0)[-1]
 
                 # This call shouldn't raise anything if there's an error deep in
