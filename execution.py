@@ -51,14 +51,14 @@ def map_node_over_list(obj, input_data_all, func, allow_interrupt=False):
         max_len_input = 0
     else:
         max_len_input = max([len(x) for x in input_data_all.values()])
-     
+
     # get a slice of inputs, repeat last input when list isn't long enough
     def slice_dict(d, i):
         d_new = dict()
         for k,v in d.items():
             d_new[k] = v[i if len(v) > i else -1]
         return d_new
-    
+
     results = []
     if input_is_list:
         if allow_interrupt:
@@ -76,7 +76,7 @@ def map_node_over_list(obj, input_data_all, func, allow_interrupt=False):
     return results
 
 def get_output_data(obj, input_data_all):
-    
+
     results = []
     uis = []
     return_values = map_node_over_list(obj, input_data_all, obj.FUNCTION, allow_interrupt=True)
@@ -89,7 +89,7 @@ def get_output_data(obj, input_data_all):
                 results.append(r['result'])
         else:
             results.append(r)
-    
+
     output = []
     if len(results) > 0:
         # check which outputs need concatenating
@@ -104,7 +104,7 @@ def get_output_data(obj, input_data_all):
             else:
                 output.append([o[i] for o in results])
 
-    ui = dict()    
+    ui = dict()
     if len(uis) > 0:
         ui = {k: [y for x in uis for y in x[k]] for k in uis[0].keys()}
     return output, ui
@@ -211,7 +211,7 @@ def recursive_will_execute(prompt, outputs, current_item):
 
     return will_execute + [unique_id]
 
-def recursive_output_delete_if_changed(prompt, old_prompt, outputs, current_item):
+def recursive_output_delete_if_changed(prompt, old_prompt, outputs, current_item, node_output_cache):
     unique_id = current_item
     inputs = prompt[unique_id]['inputs']
     class_type = prompt[unique_id]['class_type']
@@ -246,12 +246,16 @@ def recursive_output_delete_if_changed(prompt, old_prompt, outputs, current_item
         elif inputs == old_prompt[unique_id]['inputs']:
             for x in inputs:
                 input_data = inputs[x]
-
                 if isinstance(input_data, list):
                     input_unique_id = input_data[0]
                     output_index = input_data[1]
-                    if input_unique_id in outputs:
-                        to_delete = recursive_output_delete_if_changed(prompt, old_prompt, outputs, input_unique_id)
+                    node_output_cache_key = f'{input_unique_id}.{output_index}'
+                    # If this node's output has already been recursively evaluated, then we can stop.
+                    if node_output_cache_key in node_output_cache:
+                        to_delete = node_output_cache[node_output_cache_key]
+                    elif input_unique_id in outputs:
+                        to_delete = recursive_output_delete_if_changed(prompt, old_prompt, outputs, input_unique_id, node_output_cache)
+                        node_output_cache[node_output_cache_key] = to_delete
                     else:
                         to_delete = True
                     if to_delete:
@@ -346,8 +350,10 @@ class PromptExecutor:
                 d = self.object_storage.pop(o)
                 del d
 
+            # Optimize recursive_output_delete_if_changed by providing a local cache (at the prompt level).
+            recursive_delete_cache={}
             for x in prompt:
-                recursive_output_delete_if_changed(prompt, self.old_prompt, self.outputs, x)
+                recursive_output_delete_if_changed(prompt, self.old_prompt, self.outputs, x, recursive_delete_cache)
 
             current_outputs = set(self.outputs.keys())
             for x in list(self.outputs_ui.keys()):
