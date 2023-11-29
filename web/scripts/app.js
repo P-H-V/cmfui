@@ -1626,7 +1626,7 @@ export class ComfyApp {
 	 * Converts the current graph workflow for sending to the API
 	 * @returns The workflow and node links
 	 */
-	async graphToPrompt() {
+	async graphToPrompt(graph=this.graph, nodeIdOffset=0, path="/", globalMappings={}) {
 		for (const node of this.graph.computeExecutionOrder(false)) {
 			if (node.isVirtualNode) {
 				// Don't serialize frontend only nodes but let them make changes
@@ -1639,8 +1639,10 @@ export class ComfyApp {
 
 		const workflow = this.graph.serialize();
 		const output = {};
+
+		let childNodeCount = 0;
 		// Process nodes in order of execution
-		for (const node of this.graph.computeExecutionOrder(false)) {
+		for (const node of graph.computeExecutionOrder(false)) {
 			const n = workflow.nodes.find((n) => n.id === node.id);
 
 			if (node.isVirtualNode) {
@@ -1652,18 +1654,75 @@ export class ComfyApp {
 				continue;
 			}
 
+			if (node.subflow) {
+				const subgraph = new LGraph();
+				subgraph.configure(node.subflow);
+				const subgraphNodeIdOffset = nodeIdOffset + childNodeCount + graph.last_node_id;
+				const subgraphPrompt = (await this.graphToPrompt(subgraph, subgraphNodeIdOffset, path+String(node.id)+"/", globalMappings));
+				const subgraphPromptOutput = subgraphPrompt.output;
+				const subgraphGlobalMappings = subgraphPrompt.globalMappings;
+				const subgraphNodeCount = subgraphPrompt.nodeCount;
+				childNodeCount += subgraphNodeCount;
+
+				for ( const [key, value] of Object.entries(subgraphPromptOutput) ) {
+					output[key] = {
+						...value,
+						for_subflow: String(node.id) // keep reference of root node for progress and execution events
+					};
+				}
+
+				Object.assign(globalMappings, subgraphGlobalMappings);
+			}
+
 			const inputs = {};
 			const widgets = node.widgets;
+
+			const getWidgetRef = (inputNode, widgetName, inputPath) => {
+				if (inputNode.subflow) {
+					const underlyingNode = inputNode.subflow.extras.widgetSlots[widgetName];
+					return getWidgetRef(underlyingNode, widgetName, `${inputPath}${String(inputNode.id)}/` );
+				}
+
+				const globalId = globalMappings[`${inputPath}${inputNode.id}/`];
+				return globalId;
+			};
 
 			// Store all widget values
 			if (widgets) {
 				for (const i in widgets) {
 					const widget = widgets[i];
 					if (!widget.options || widget.options.serialize !== false) {
-						inputs[widget.name] = widget.serializeValue ? await widget.serializeValue(n, i) : widget.value;
+						if (node.subflow) {
+							if (i != 0) { // skip the load widget
+								const globalId = getWidgetRef(node, widget.name, path);
+								output[ globalId ].inputs[widget.name] = widget.serializeValue ? await widget.serializeValue(n, i) : widget.value;
+							}
+						} else {
+							inputs[widget.name] = widget.serializeValue ? await widget.serializeValue(n, i) : widget.value;
+						}
 					}
 				}
 			}
+
+			const getOutputRef = (inputNode, inputSlot, inputPath) => {
+				if (inputNode.subflow) {
+					const [ underlyingNode, underlyingSlot ] = inputNode.subflow.extras.inputSlots[inputSlot];
+					return getOutputRef(underlyingNode, underlyingSlot, `${inputPath}${String(inputNode.id)}/` );
+				}
+
+				const globalId = globalMappings[`${inputPath}${inputNode.id}/`];
+				return [globalId, parseInt(inputSlot)];
+			};
+
+			const getInputRef = (inputNode, inputSlot, inputPath) => {
+				if (inputNode.subflow) {
+					const [ underlyingNode, underlyingSlot ] = inputNode.subflow.extras.outputSlots[inputSlot];
+					return getInputRef(underlyingNode, underlyingSlot, `${inputPath}${String(inputNode.id)}/`);
+				}
+
+				const globalId = globalMappings[`${inputPath}${inputNode.id}/`];
+				return [globalId, parseInt(inputSlot)];
+			};
 
 			// Store all node links
 			for (let i in node.inputs) {
@@ -1704,15 +1763,24 @@ export class ComfyApp {
 					}
 
 					if (link) {
-						inputs[node.inputs[i].name] = [String(link.origin_id), parseInt(link.origin_slot)];
+						if (node.subflow) {
+							const [targetId, targetSlot] = getOutputRef(node, link.target_slot, path);
+							output[ targetId ].inputs[ node.inputs[targetSlot].name ] = getInputRef(parent, link.origin_slot, path);
+						}
+
+						inputs[node.inputs[i].name] = getInputRef(parent, link.origin_slot, path);
 					}
 				}
 			}
 
-			output[String(node.id)] = {
-				inputs,
-				class_type: node.comfyClass,
-			};
+			if (!node.subflow) {
+				const globalId = String(nodeIdOffset + node.id);
+				globalMappings[path+String(node.id)+"/"] = globalId;
+				output[globalId] = {
+					inputs,
+					class_type: node.comfyClass,
+				};
+			}
 		}
 
 		// Remove inputs connected to removed nodes
@@ -1727,7 +1795,8 @@ export class ComfyApp {
 			}
 		}
 
-		return { workflow, output };
+		const nodeCount = childNodeCount + graph.last_node_id;
+		return { workflow, output, globalMappings, nodeCount };
 	}
 
 	#formatPromptError(error) {

@@ -1862,6 +1862,7 @@ def init_custom_nodes():
         "nodes_canny.py",
         "nodes_freelunch.py",
         "nodes_custom_sampler.py",
+        "nodes_subflow.py",
         "nodes_hypertile.py",
         "nodes_model_advanced.py",
         "nodes_model_downscale.py",

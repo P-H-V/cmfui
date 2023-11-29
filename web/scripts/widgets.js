@@ -1,4 +1,5 @@
 import { api } from "./api.js"
+import { getPngMetadata } from "./pnginfo.js";
 import "./domWidget.js";
 
 function getNumberDefaults(inputData, defaultStep, precision, enable_rounding) {
@@ -403,4 +404,78 @@ export const ComfyWidgets = {
 
 		return { widget: uploadWidget };
 	},
+	SUBFLOWUPLOAD(node, inputName, inputData, app) {
+		let uploadWidget;
+
+		const uploadFile = async (file) => {
+			if (file.type === "image/png") {
+				const pngInfo = await getPngMetadata(file);
+				if (pngInfo?.workflow) {
+					const subflow = JSON.parse(pngInfo.workflow);
+					node.refreshNode(subflow, file.name);
+				}
+			} else if (file.type === "application/json" || file.name?.endsWith(".json")) {
+				const reader = new FileReader();
+				reader.onload = () => {
+					const subflow = JSON.parse(reader.result);
+					node.refreshNode(subflow, file.name);
+				};
+				reader.readAsText(file);
+			}
+		};
+
+		const fileInput = document.createElement("input");
+		Object.assign(fileInput, {
+			type: "file",
+			accept: "image/png,application/json",
+			style: "display: none",
+			onchange: async () => {
+				if (fileInput.files.length) {
+					await uploadFile(fileInput.files[0], true);
+				}
+			},
+		});
+		document.body.append(fileInput);
+
+		// Create the button widget for selecting the files
+		uploadWidget = node.addWidget("button", "choose file with subflow", "subflow", () => {
+			fileInput.click();
+		});
+		uploadWidget.serialize = false;
+
+		// Add handler to check if an image is being dragged over our node
+		node.onDragOver = function (e) {
+			if (e.dataTransfer && e.dataTransfer.items) {
+				const image = [...e.dataTransfer.items].find((f) => f.kind === "file");
+				return !!image;
+			}
+
+			return false;
+		};
+
+		// On drop upload files
+		node.onDragDrop = function (e) {
+			let handled = false;
+			for (const file of e.dataTransfer.files) {
+				if (file.type === "image/png" || file.type === "application/json") {
+					uploadFile(file, !handled); // Dont await these, any order is fine, only update on first one
+					handled = true;
+				}
+			}
+
+			return handled;
+		};
+
+		node.pasteFile = function(file) {
+			if (file.type === "image/png" || file.type === "application/json") {
+				const is_pasted = (file.name === "image.png") &&
+								  (file.lastModified - Date.now() < 2000);
+				uploadFile(file, true, is_pasted);
+				return true;
+			}
+			return false;
+		}
+
+		return { widget: uploadWidget };
+	}
 };

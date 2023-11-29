@@ -2618,6 +2618,9 @@
         if (this.shape) {
             o.shape = this.shape;
         }
+        if (this.subflow) {
+            o.subflow = this.subflow;
+        }
 
         if (this.onSerialize) {
             if (this.onSerialize(o)) {
@@ -12950,6 +12953,110 @@ LGraphNode.prototype.executeAction = function(action)
         return false;
     };
 
+    LGraphCanvas.onMenuNodeExport = function(value, options, e, menu, node) {
+        if (!node) {
+            throw "no node passed";
+        }
+
+        function getConfig(widgetName) {
+            const { nodeData } = this.constructor;
+            return nodeData?.input?.required[widgetName] ?? nodeData?.input?.optional?.[widgetName];
+        }
+
+        const getOption = (opt, pinType) => {
+            const color = LGraphCanvas.link_type_colors[opt.type];
+            const innerHtml = `<span style='display: block; padding-left: 4px; color: ${color};'>${opt.name}${opt.isExported ? " (exported)" : ""} </span>`;
+            return {
+                pinType,
+                content: innerHtml,
+                type: opt.type,
+                value: opt.value,
+                name: opt.name,
+                options: opt.options
+            };
+        };
+
+        let inputs = (node.inputs ?? []).filter((input) => !input.widget);
+        let widgets = (node.widgets ?? []).filter(({type}) => type != "button");
+        let outputs = node.outputs ?? [];
+        const isExported = (exports, v) => {
+            return exports.find(exp => exp.name == v.name) !== undefined;
+        };
+        if (node.properties?.exports?.inputs) {
+            inputs = inputs.map( input => ( {...input, isExported: isExported(node.properties.exports.inputs, input)} ));
+        }
+        if (node.properties?.exports?.widgets) {
+            widgets = widgets.map( widget => ( {...widget, isExported: isExported(node.properties.exports.widgets, widget)} ));
+        }
+        if (node.properties?.exports?.outputs) {
+            outputs = outputs.map( output => ( {...output, isExported: isExported(node.properties.exports.outputs, output)} ));
+        }
+
+        const exportableVars = [
+            ...inputs.map((input) => getOption(input, "input")),
+            ...widgets.map((widget) => getOption(widget, "widget")),
+            null,
+            ...outputs.map((output) => getOption(output, "output")),
+        ];
+        new LiteGraph.ContextMenu(exportableVars, {
+            event: e,
+            callback: inner_clicked,
+            parentMenu: menu,
+            node: node
+        });
+
+        function inner_clicked(v) {
+            if (!node) {
+                return;
+            }
+            node.graph.beforeChange(/*?*/); //node
+
+            const exportVar = () => {
+                if(!node.properties.exports) {
+                    node.properties.exports = {};
+                }
+                if (!node.properties.exports?.inputs) {
+                    node.properties.exports.inputs = [];
+                }
+                if (!node.properties.exports?.widgets) {
+                    node.properties.exports.widgets = [];
+                }
+                if (!node.properties.exports?.outputs) {
+                    node.properties.exports.outputs = [];
+                }
+    
+                const toggle = (arr, val) => {
+                    const i = arr.findIndex(ele => ele.name === val.name);
+                    if ( i >= 0 ) {
+                        arr.splice(i, 1);
+                    } else {
+                        const extras = {};
+                        // copy widget params
+                        if (val.options) {
+                            extras.config = [val.type, val.options || {}];
+                            extras.value = val.value;
+                        }
+                        arr.push({ name: val.name, ...extras });
+                    }
+                };
+
+                if (v.pinType == "input") {
+                    toggle(node.properties.exports.inputs, v);
+                } else if(v.pinType == "widget") {
+                    toggle(node.properties.exports.widgets, v);
+                } else if (v.pinType == "output") {
+                    toggle(node.properties.exports.outputs, v);
+                }
+            };
+            exportVar();
+
+            node.graph.afterChange(/*?*/); //node
+            node.setDirtyCanvas(true);
+        }
+
+        return false;
+    };
+
     LGraphCanvas.onMenuNodeRemove = function(value, options, e, menu, node) {
         if (!node) {
             throw "no node passed";
@@ -13158,6 +13265,11 @@ LGraphNode.prototype.executeAction = function(action)
                     content: "Shapes",
                     has_submenu: true,
                     callback: LGraphCanvas.onMenuNodeShapes
+                },
+                {
+                    content: "Export",
+                    has_submenu: true,
+                    callback: LGraphCanvas.onMenuNodeExport
                 },
                 null
             );
