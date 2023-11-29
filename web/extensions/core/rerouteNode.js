@@ -21,8 +21,21 @@ app.registerExtension({
 
 					// Prevent multiple connections to different types when we have no input
 					if (connected && type === LiteGraph.OUTPUT) {
-						// Ignore wildcard nodes as these will be updated to real types
-						const types = new Set(this.outputs[0].links.map((l) => app.graph.links[l].type).filter((t) => t !== "*"));
+						const callback = function (l) {
+							// Map the link to a type, including the widget config if it exists
+							const link = app.graph.links[l];
+							const input = app.graph.getNodeById(link.target_id).getInputInfo(link.target_slot);
+							return [link.type, input?.widget ? JSON.stringify(input.widget.config) : ""];
+						}
+						const types = new Set(
+							this.outputs[0].links
+							// Map each link to a type
+							.map((l) => callback(l))
+							// Ignore wildcard nodes as these will be updated to real types
+							.filter((t) => t[0] !== "*")
+							// Concatenate the type and widget config into a single string
+							.map((t) => t[0] + t[1])
+						);
 						if (types.size > 1) {
 							const linksToDisconnect = [];
 							for (let i = 0; i < this.outputs[0].links.length - 1; i++) {
@@ -42,6 +55,7 @@ app.registerExtension({
 					let updateNodes = [];
 					let inputType = null;
 					let inputNode = null;
+					let rootNode = null;
 					while (currentNode) {
 						updateNodes.unshift(currentNode);
 						const linkId = currentNode.inputs[0].link;
@@ -63,6 +77,7 @@ app.registerExtension({
 								// We've found the end
 								inputNode = currentNode;
 								inputType = node.outputs[link.origin_slot]?.type ?? null;
+								rootNode = node;
 								break;
 							}
 						} else {
@@ -75,6 +90,7 @@ app.registerExtension({
 					// Find all outputs
 					const nodes = [this];
 					let outputType = null;
+					let outputWidget = null;
 					while (nodes.length) {
 						currentNode = nodes.pop();
 						const outputs = (currentNode.outputs ? currentNode.outputs[0].links : []) || [];
@@ -95,11 +111,13 @@ app.registerExtension({
 								} else {
 									// We've found an output
 									const nodeOutType = node.inputs && node.inputs[link?.target_slot] && node.inputs[link.target_slot].type ? node.inputs[link.target_slot].type : null;
-									if (inputType && nodeOutType !== inputType) {
-										// The output doesnt match our input so disconnect it
+									if (inputType && nodeOutType !== inputType && inputType !== "*") {
+										// The output doesnt match our input and is not a wildcard so disconnect it
 										node.disconnectInput(link.target_slot);
 									} else {
 										outputType = nodeOutType;
+										// We are not disconnecting the output node, so store the widget of the output node
+										outputWidget = node.inputs[link.target_slot]?.widget ?? null;
 									}
 								}
 							}
@@ -108,7 +126,12 @@ app.registerExtension({
 						}
 					}
 
-					const displayType = inputType || outputType || "*";
+					if (rootNode?.constructor.type === "PrimitiveNode" && inputType === "*") {
+						// Primitive doesn't have type yet, skip update
+						return;
+					}
+
+					const displayType = (inputType === "*" && outputType) || inputType || outputType || "*";
 					const color = LGraphCanvas.link_type_colors[displayType];
 
 					// Update the types of each node
@@ -118,6 +141,13 @@ app.registerExtension({
 						node.outputs[0].type = inputType || "*";
 						node.__outputType = displayType;
 						node.outputs[0].name = node.properties.showOutputText ? displayType : "";
+						if (outputWidget) {
+							// Inherit the widget from the connected input
+							node.inputs[0].widget = outputWidget;
+						} else {
+							// Delete the widget if no output widget is found
+							delete node.inputs[0].widget;
+						}
 						node.size = node.computeSize();
 						node.applyOrientation();
 
